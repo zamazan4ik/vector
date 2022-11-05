@@ -119,32 +119,6 @@ impl RunningTopology {
             check_handles.entry(key).or_default().push(task);
         }
 
-        // If we reach this, we will forcefully shutdown the sources.
-        let deadline = Instant::now() + Duration::from_secs(60);
-
-        // If we reach the deadline, this future will print out which components
-        // won't gracefully shutdown since we will start to forcefully shutdown
-        // the sources.
-        let mut check_handles2 = check_handles.clone();
-        let timeout = async move {
-            sleep_until(deadline).await;
-            // Remove all tasks that have shutdown.
-            check_handles2.retain(|_key, handles| {
-                retain(handles, |handle| handle.peek().is_none());
-                !handles.is_empty()
-            });
-            let remaining_components = check_handles2
-                .keys()
-                .map(|item| item.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            error!(
-                components = ?remaining_components,
-                "Failed to gracefully shut down in time. Killing components."
-            );
-        };
-
         // Reports in intervals which components are still running.
         let mut interval = interval(Duration::from_secs(5));
         let reporter = async move {
@@ -178,12 +152,49 @@ impl RunningTopology {
         // Finishes once all tasks have shutdown.
         let success = futures::future::join_all(wait_handles).map(|_| ());
 
-        // Aggregate future that ends once anything detects that all tasks have shutdown.
-        let shutdown_complete_future = future::select_all(vec![
-            Box::pin(timeout) as future::BoxFuture<'static, ()>,
+        let mut futures = vec![
             Box::pin(reporter) as future::BoxFuture<'static, ()>,
             Box::pin(success) as future::BoxFuture<'static, ()>,
-        ]);
+        ];
+
+        let deadline = if self.config.global.graceful_shutdown.enabled {
+            Some(Instant::now() + self.config.global.graceful_shutdown.duration)
+        } else {
+            None
+        };
+
+        if self.config.global.graceful_shutdown.enabled {
+            // If we reach this, we will forcefully shutdown the sources.
+            let deadline = Instant::now() + self.config.global.graceful_shutdown.duration;
+
+            // If we reach the deadline, this future will print out which components
+            // won't gracefully shutdown since we will start to forcefully shutdown
+            // the sources.
+            let mut check_handles2 = check_handles.clone();
+            let timeout = async move {
+                sleep_until(deadline).await;
+                // Remove all tasks that have shutdown.
+                check_handles2.retain(|_key, handles| {
+                    retain(handles, |handle| handle.peek().is_none());
+                    !handles.is_empty()
+                });
+                let remaining_components = check_handles2
+                    .keys()
+                    .map(|item| item.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                error!(
+                    components = ?remaining_components,
+                    "Failed to gracefully shut down in time. Killing components."
+                );
+            };
+
+            futures.push(Box::pin(timeout) as future::BoxFuture<'static, ()>);
+        }
+
+        // Aggregate future that ends once anything detects that all tasks have shutdown.
+        let shutdown_complete_future = future::select_all(futures);
 
         // Now kick off the shutdown process by shutting down the sources.
         let source_shutdown_complete = self.shutdown_coordinator.shutdown_all(deadline);

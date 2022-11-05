@@ -204,7 +204,7 @@ impl SourceShutdownCoordinator {
     ///
     /// Panics if this coordinator has had its triggers removed (ie
     /// has been taken over with `Self::takeover_source`).
-    pub fn shutdown_all(self, deadline: Instant) -> impl Future<Output = ()> {
+    pub fn shutdown_all(self, deadline: Option<Instant>) -> impl Future<Output = ()> {
         let mut complete_futures = Vec::new();
 
         let shutdown_begun_triggers = self.shutdown_begun_triggers;
@@ -306,23 +306,28 @@ impl SourceShutdownCoordinator {
         shutdown_complete_tripwire: Tripwire,
         shutdown_force_trigger: Trigger,
         id: ComponentKey,
-        deadline: Instant,
+        deadline: Option<Instant>,
     ) -> impl Future<Output = bool> {
         async move {
             // Call `shutdown_force_trigger.disable()` on drop.
             let shutdown_force_trigger = DisabledTrigger::new(shutdown_force_trigger);
 
             let fut = shutdown_complete_tripwire.then(tripwire_handler);
-            if timeout_at(deadline, fut).await.is_ok() {
-                shutdown_force_trigger.into_inner().disable();
-                true
+            if let Some(deadline) = deadline {
+                if timeout_at(deadline, fut).await.is_ok() {
+                    shutdown_force_trigger.into_inner().disable();
+                    true
+                } else {
+                    error!(
+                        "Source '{}' failed to shutdown before deadline. Forcing shutdown.",
+                        id,
+                    );
+                    shutdown_force_trigger.into_inner().cancel();
+                    false
+                }
             } else {
-                error!(
-                    "Source '{}' failed to shutdown before deadline. Forcing shutdown.",
-                    id,
-                );
-                shutdown_force_trigger.into_inner().cancel();
-                false
+                fut.await;
+                true
             }
         }
         .boxed()
@@ -343,7 +348,7 @@ mod test {
 
         let (shutdown_signal, _) = shutdown.register_source(&id);
 
-        let deadline = Instant::now() + Duration::from_secs(1);
+        let deadline = Some(Instant::now() + Duration::from_secs(1));
         let shutdown_complete = shutdown.shutdown_source(&id, deadline);
 
         drop(shutdown_signal);

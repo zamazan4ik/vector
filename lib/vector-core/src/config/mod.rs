@@ -1,3 +1,4 @@
+use std::time::Duration;
 use std::{fmt, num::NonZeroUsize};
 
 use bitmask_enum::bitmask;
@@ -246,6 +247,34 @@ impl From<Option<bool>> for AcknowledgementsConfig {
 impl From<bool> for AcknowledgementsConfig {
     fn from(enabled: bool) -> Self {
         Some(enabled).into()
+    }
+}
+
+/// End-to-end acknowledgements configuration.
+#[configurable_component]
+#[configurable(title = "Controls how graceful shutdown is handled.")]
+#[configurable(
+    description = "The amount of time, in seconds, that Vector waits for finishing the topology gracefully. \
+If the topology is not finished gracefully during the specified timeout - it is forcefully killed."
+)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GracefulShutdownConfig {
+    /// Whether or not graceful shutdown is enabled.
+    ///
+    /// When enabled, Vector waits for finishing the topology for specified time in `duration`, then forcefully kills the topology.
+    /// When disabled, Vector waits for finishing the topology forever.
+    pub enabled: bool,
+
+    /// Graceful shutdown timeout duration, in seconds.
+    pub duration: Duration,
+}
+
+impl Default for GracefulShutdownConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            duration: Duration::from_secs(60),
+        }
     }
 }
 

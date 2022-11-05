@@ -5,7 +5,7 @@ use vector_common::TimeZone;
 use vector_config::configurable_component;
 
 use super::super::default_data_dir;
-use super::{proxy::ProxyConfig, AcknowledgementsConfig, LogSchema};
+use super::{proxy::ProxyConfig, AcknowledgementsConfig, GracefulShutdownConfig, LogSchema};
 use crate::serde::bool_or_struct;
 
 #[derive(Debug, Snafu)]
@@ -101,6 +101,14 @@ pub struct GlobalOptions {
     /// a small amount of memory for each metric.
     #[serde(skip_serializing_if = "crate::serde::skip_serializing_if_default")]
     pub expire_metrics_secs: Option<f64>,
+
+    /// The amount of time, in seconds, that Vector waits for finishing the topology gracefully.
+    /// If the topology is not finished gracefully during the specified timeout - it is forcefully killed.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::serde::skip_serializing_if_default"
+    )]
+    pub graceful_shutdown: GracefulShutdownConfig,
 }
 
 impl GlobalOptions {
@@ -179,6 +187,10 @@ impl GlobalOptions {
             errors.push("conflicting values for 'timezone' found".to_owned());
         }
 
+        if &self.graceful_shutdown != &with.graceful_shutdown {
+            errors.push("conflicting values for 'graceful_shutdown' found".to_owned());
+        }
+
         let data_dir = if self.data_dir.is_none() || self.data_dir == default_data_dir() {
             with.data_dir
         } else if with.data_dir != default_data_dir() && self.data_dir != with.data_dir {
@@ -206,6 +218,7 @@ impl GlobalOptions {
                 proxy: self.proxy.merge(&with.proxy),
                 expire_metrics: self.expire_metrics.or(with.expire_metrics),
                 expire_metrics_secs: self.expire_metrics_secs.or(with.expire_metrics_secs),
+                graceful_shutdown: self.graceful_shutdown,
             })
         } else {
             Err(errors)
