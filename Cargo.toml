@@ -637,6 +637,7 @@ sinks-logs = [
   "sinks-new_relic_logs",
   "sinks-new_relic",
   "sinks-papertrail",
+  "sinks-postgresql",
   "sinks-pulsar",
   "sinks-redis",
   "sinks-sematext",
@@ -694,6 +695,7 @@ sinks-nats = ["dep:nats", "dep:nkeys"]
 sinks-new_relic_logs = ["sinks-http"]
 sinks-new_relic = []
 sinks-papertrail = ["dep:syslog"]
+sinks-postgresql = []
 sinks-prometheus = ["aws-core", "dep:base64", "dep:prometheus-parser", "dep:snap", "dep:serde_with"]
 sinks-pulsar = ["dep:avro-rs", "dep:pulsar"]
 sinks-redis = ["dep:redis"]

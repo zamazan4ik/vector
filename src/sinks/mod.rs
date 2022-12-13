@@ -72,6 +72,8 @@ pub mod nats;
 pub mod new_relic;
 #[cfg(feature = "sinks-papertrail")]
 pub mod papertrail;
+#[cfg(feature = "sinks-postgresql")]
+pub mod postgresql;
 #[cfg(feature = "sinks-prometheus")]
 pub mod prometheus;
 #[cfg(feature = "sinks-pulsar")]
